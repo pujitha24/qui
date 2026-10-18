@@ -561,6 +561,11 @@ func (m matcher) validateGroupSiteAndChecksum(sourceSide, candidateSide namedRel
 		if candidateSiteIdentity == "" {
 			candidateSiteIdentity = candidateGroup
 		}
+		// A group both names tag explicitly already satisfied the group check. It
+		// cannot also stand in for the site the candidate leaves out.
+		if candidateSite == "" && m.sharedExplicitGroup(sourceSide, candidateSide, sourceGroup, candidateGroup) {
+			candidateSiteIdentity = ""
+		}
 		if candidateSiteIdentity != "" && sourceSite != candidateSiteIdentity {
 			return false, "site mismatch"
 		}
@@ -582,6 +587,14 @@ func (m matcher) validateGroupSiteAndChecksum(sourceSide, candidateSide namedRel
 	}
 
 	return true, ""
+}
+
+// sharedExplicitGroup reports whether both sides spell the same non-empty group
+// as a real group tag. A word rls only guessed at is not an explicit group.
+func (m matcher) sharedExplicitGroup(sourceSide, candidateSide namedRelease, sourceGroup, candidateGroup string) bool {
+	return sourceGroup != "" && sourceGroup == candidateGroup &&
+		m.groupTagProvenance(sourceSide).explicitGroups.contains(sourceGroup) &&
+		m.groupTagProvenance(candidateSide).explicitGroups.contains(candidateGroup)
 }
 
 // spaceJoinedGroupSite reports whether one name writes the group and the

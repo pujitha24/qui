@@ -1325,3 +1325,42 @@ func TestStrictMatchReadsSelectedFileForHyphenatedDashSuffixGroup(t *testing.T) 
 	ok, reason = strict(grouped)
 	require.True(t, ok, "bracket side file spelling: %s", reason)
 }
+
+func TestValidateGroupSiteAndChecksumIndexerLabelOnOneSide(t *testing.T) {
+	svc := &Service{stringNormalizer: stringutils.NewDefaultNormalizer()}
+	const (
+		labelled = "Show.Name.S01E02.1080p.WEB.H264-GRP[eztv]"
+		bare     = "Show.Name.S01E02.1080p.WEB.H264-GRP"
+	)
+
+	tests := []struct {
+		name       string
+		source     string
+		candidate  string
+		wantReason string
+	}{
+		{name: "labelled source", source: labelled, candidate: bare},
+		{name: "labelled candidate", source: bare, candidate: labelled},
+		{name: "same label different group", source: labelled, candidate: "Show.Name.S01E02.1080p.WEB.H264-OTHER[eztv]", wantReason: "group mismatch"},
+		{name: "different labels", source: labelled, candidate: "Show.Name.S01E02.1080p.WEB.H264-GRP[other]", wantReason: "site mismatch"},
+		{name: "guessed group", source: "[KIRI] Show Name S01 [1080p][Batch]", candidate: "Show.Name.S01.1080p-Batch", wantReason: "site mismatch"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source, candidate := rls.ParseString(test.source), rls.ParseString(test.candidate)
+			ok, reason := svc.matcher().validateGroupSiteAndChecksum(namedRelease{release: &source}, namedRelease{release: &candidate}, false)
+			require.Equal(t, test.wantReason == "", ok)
+			require.Equal(t, test.wantReason, reason)
+		})
+	}
+
+	t.Run("labelled source from file-derived fields", func(t *testing.T) {
+		source, candidate := rls.ParseString(labelled), rls.ParseString(bare)
+		// A file name carries the group but not the label.
+		file := rls.ParseString("Show.Name.S01E02.1080p.WEB.H264-GRP.mkv")
+		ok, reason := svc.matcher().validateGroupSiteAndChecksum(
+			namedRelease{release: &source, rawName: labelled, tagOrigin: &file},
+			namedRelease{release: &candidate, rawName: bare}, false)
+		require.True(t, ok, "reason: %s", reason)
+	})
+}

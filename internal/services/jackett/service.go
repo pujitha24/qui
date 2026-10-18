@@ -978,11 +978,6 @@ func (s *Service) DownloadTorrent(ctx context.Context, req TorrentDownloadReques
 				RetryAt:     retryAt,
 			}
 		}
-		if req.Pace {
-			if waitErr := s.rateLimiter.WaitForMinInterval(ctx, indexer); waitErr != nil {
-				return nil, waitErr
-			}
-		}
 	}
 
 	apiKey, err := s.indexerStore.GetDecryptedAPIKey(indexer)
@@ -1021,7 +1016,16 @@ func (s *Service) DownloadTorrent(ctx context.Context, req TorrentDownloadReques
 			backoff = min(time.Duration(float64(backoff)*2), downloadMaxBackoff)
 		}
 
+		if req.Pace && s.rateLimiter != nil {
+			if waitErr := s.rateLimiter.WaitForMinInterval(ctx, indexer); waitErr != nil {
+				return nil, waitErr
+			}
+		}
+
 		data, err := client.Download(ctx, downloadURL)
+		if req.Pace && s.rateLimiter != nil {
+			s.rateLimiter.RecordRequestComplete(indexer.ID, time.Time{})
+		}
 		if err == nil {
 			if s.torrentCache != nil {
 				entry := &models.TorznabTorrentCacheEntry{

@@ -101,6 +101,18 @@ func (r *RateLimiter) RecordRequestComplete(indexerID int, ts time.Time) {
 	state.lastCompleted = dur
 }
 
+// ReserveSlot marks the indexer's request slot as taken now, so requests admitted
+// while a dispatched task is in flight are paced against its start. Completion
+// still records, so the next admission is paced from whichever is later.
+func (r *RateLimiter) ReserveSlot(indexer *models.TorznabIndexer) {
+	if r == nil || indexer == nil || indexer.Backend != models.TorznabBackendNative {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.getStateLocked(indexer.ID).lastCompleted = time.Since(r.startTime)
+}
+
 // WaitForMinInterval blocks until a native Torznab request slot is available,
 // then reserves it for callers that do not report completion separately.
 //
@@ -619,6 +631,7 @@ func (s *searchScheduler) dispatchTasks() {
 		// Ready - try to acquire worker
 		select {
 		case s.workerPool <- struct{}{}:
+			s.rateLimiter.ReserveSlot(item.task.indexer)
 			s.inFlight[item.task.indexer.ID] = item
 			go s.executeTask(item)
 		default:

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -533,4 +534,35 @@ func TestScheduledSearchCapsRateLimitIsNotCovered(t *testing.T) {
 		t.Fatal("scheduled search timed out")
 	}
 	assertSingleCapsFetch(t, requests)
+}
+
+func TestDownloadTorrentPacesRetryAttempts(t *testing.T) {
+	const interval = 3 * time.Second // longer than downloadInitialBackoff
+
+	var mu sync.Mutex
+	var stamps []time.Time
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		stamps = append(stamps, time.Now())
+		n := len(stamps)
+		mu.Unlock()
+		if n == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(testTorrentPayload))
+	}))
+	t.Cleanup(server.Close)
+
+	idx := &models.TorznabIndexer{ID: 93, Name: "Paced", BaseURL: server.URL, Backend: models.TorznabBackendNative, Enabled: true}
+	service := NewService(&mockTorznabIndexerStore{indexers: []*models.TorznabIndexer{idx}}, WithMinRequestInterval(interval))
+	t.Cleanup(service.searchScheduler.Stop)
+
+	_, err := service.DownloadTorrent(t.Context(), TorrentDownloadRequest{IndexerID: idx.ID, DownloadURL: server.URL + "/download", Pace: true})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, stamps, 2)
+	assert.GreaterOrEqual(t, stamps[1].Sub(stamps[0]), interval-100*time.Millisecond)
 }

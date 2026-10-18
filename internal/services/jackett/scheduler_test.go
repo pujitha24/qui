@@ -1128,6 +1128,34 @@ func TestRateLimiter_WaitForMinInterval_ReservesSlot(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_WaitForMinInterval_BlocksAfterDispatchReservation(t *testing.T) {
+	limiter := NewRateLimiter(200 * time.Millisecond)
+	indexer := &models.TorznabIndexer{ID: 1, Backend: models.TorznabBackendNative}
+
+	// A scheduler dispatch reserves the slot before the search completes.
+	limiter.ReserveSlot(indexer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := limiter.WaitForMinInterval(ctx, indexer); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitForMinInterval = %v, want deadline exceeded while a dispatched search holds the slot", err)
+	}
+
+	// Completion records later than the reservation, so it extends the pacing.
+	time.Sleep(100 * time.Millisecond)
+	limiter.RecordRequestComplete(indexer.ID, time.Time{})
+	if wait := limiter.NextWait(indexer); wait < 150*time.Millisecond {
+		t.Fatalf("wait after completion = %v, want paced from completion", wait)
+	}
+
+	// Aggregator backends are never paced.
+	other := &models.TorznabIndexer{ID: 2, Backend: models.TorznabBackendProwlarr}
+	limiter.ReserveSlot(other)
+	if err := limiter.WaitForMinInterval(context.Background(), other); err != nil {
+		t.Fatalf("WaitForMinInterval for non-native backend: %v", err)
+	}
+}
+
 func TestRateLimiter_WaitForMinInterval_IgnoresCooldown(t *testing.T) {
 	limiter := NewRateLimiter(50 * time.Millisecond)
 	indexer := &models.TorznabIndexer{ID: 1, Backend: models.TorznabBackendNative}

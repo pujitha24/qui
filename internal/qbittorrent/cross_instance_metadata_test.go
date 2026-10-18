@@ -59,6 +59,29 @@ func TestMergeTorrentStats(t *testing.T) {
 	require.EqualValues(t, 650, merged.TotalSeedingSize)
 }
 
+func TestWithServerStateTransfer(t *testing.T) {
+	stats := &TorrentStats{
+		Total:              1,
+		TotalDownloadSpeed: 1,
+		TotalUploadSpeed:   2,
+		TotalDownloadData:  3,
+		TotalUploadData:    4,
+		TotalSize:          10,
+	}
+	state := &qbt.ServerState{DlInfoSpeed: 100, UpInfoSpeed: 200, DlInfoData: 300, UpInfoData: 400}
+
+	got := withServerStateTransfer(stats, state)
+	require.Equal(t, 100, got.TotalDownloadSpeed)
+	require.Equal(t, 200, got.TotalUploadSpeed)
+	require.EqualValues(t, 300, got.TotalDownloadData)
+	require.EqualValues(t, 400, got.TotalUploadData)
+	require.EqualValues(t, 10, got.TotalSize)
+	require.EqualValues(t, 3, stats.TotalDownloadData, "input stats must not be mutated")
+
+	require.Same(t, stats, withServerStateTransfer(stats, nil))
+	require.Nil(t, withServerStateTransfer(nil, state))
+}
+
 func TestMergeTorrentCounts(t *testing.T) {
 	base := &TorrentCounts{
 		Status: map[string]int{

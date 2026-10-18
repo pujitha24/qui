@@ -1975,7 +1975,7 @@ func (sm *SyncManager) GetCrossInstanceTorrentsWithFilters(ctx context.Context, 
 			allTorrents = append(allTorrents, crossInstanceTorrent)
 		}
 
-		aggregatedStats = mergeTorrentStats(aggregatedStats, instanceResponse.Stats)
+		aggregatedStats = mergeTorrentStats(aggregatedStats, withServerStateTransfer(instanceResponse.Stats, instanceResponse.ServerState))
 		aggregatedCounts = mergeTorrentCounts(aggregatedCounts, instanceResponse.Counts)
 		trackerHealthSupported = trackerHealthSupported || instanceResponse.TrackerHealthSupported
 		mergeTorrentCategories(aggregatedCategories, instanceResponse.Categories)
@@ -2035,6 +2035,23 @@ func (sm *SyncManager) GetCrossInstanceTorrentsWithFilters(ctx context.Context, 
 	}
 
 	return response, nil
+}
+
+// withServerStateTransfer returns stats with the transfer speeds and session data
+// taken from the instance's server state, so the aggregate footer matches the
+// single-instance footer instead of summing only the filtered torrents.
+func withServerStateTransfer(stats *TorrentStats, serverState *qbt.ServerState) *TorrentStats {
+	if stats == nil || serverState == nil {
+		return stats
+	}
+
+	adjusted := *stats
+	adjusted.TotalDownloadSpeed = int(serverState.DlInfoSpeed)
+	adjusted.TotalUploadSpeed = int(serverState.UpInfoSpeed)
+	adjusted.TotalDownloadData = serverState.DlInfoData
+	adjusted.TotalUploadData = serverState.UpInfoData
+
+	return &adjusted
 }
 
 func mergeTorrentStats(base *TorrentStats, next *TorrentStats) *TorrentStats {

@@ -136,7 +136,7 @@ func (s *CrossSeedBlocklistStore) FindBlocked(ctx context.Context, instanceID in
 		return "", false, nil
 	}
 
-	normalized := normalizeInfoHashList(hashes)
+	normalized := normalizeInfoHashList(withTruncatedV2Hashes(hashes))
 	if len(normalized) == 0 {
 		return "", false, nil
 	}
@@ -164,6 +164,20 @@ func (s *CrossSeedBlocklistStore) FindBlocked(ctx context.Context, instanceID in
 	}
 
 	return infohash, true, nil
+}
+
+// withTruncatedV2Hashes adds the 40-character form of each full v2 infohash.
+// With libtorrent 2, qBittorrent reports a v2 infohash cut to 40 characters,
+// and that is the form the block action stores.
+func withTruncatedV2Hashes(hashes []string) []string {
+	out := make([]string, 0, len(hashes)*2)
+	for _, h := range hashes {
+		out = append(out, h)
+		if trimmed := normalizeInfoHash(h); len(trimmed) == 64 {
+			out = append(out, trimmed[:40])
+		}
+	}
+	return out
 }
 
 func normalizeInfoHash(value string) string {

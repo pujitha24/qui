@@ -51,8 +51,9 @@ func (s *Service) lookupMediaFileIDs(ctx context.Context, instance *models.Insta
 		return nil
 	}
 
-	// qBittorrent's Hash is the v1 infohash for v1 and hybrid torrents, so
-	// the same content shares one row across instances.
+	// With libtorrent 2, qBittorrent's Hash is the v2 infohash cut to 40
+	// characters for a hybrid or v2 torrent, and the v1 infohash otherwise.
+	// The same content shares one row across instances.
 	key := normalizeHash(torrent.Hash)
 	if key == "" {
 		return nil

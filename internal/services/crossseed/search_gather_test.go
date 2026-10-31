@@ -308,3 +308,34 @@ func TestGatherSearchResults(t *testing.T) {
 		})
 	}
 }
+
+func TestDedupeSearchResults(t *testing.T) {
+	in := []jackett.SearchResult{
+		{IndexerID: 1, GUID: "a", Title: "first"},
+		{IndexerID: 1, GUID: "b", Title: "second"},
+		{IndexerID: 1, GUID: "a", Title: "retry of first"},
+		{IndexerID: 2, DownloadURL: "http://x/1", Title: "url"},
+		{IndexerID: 2, DownloadURL: "http://x/1", Title: "url retry"},
+		{IndexerID: 3, Title: "bare one"},
+		{IndexerID: 3, Title: "bare two"},
+	}
+	var titles []string
+	for _, r := range dedupeSearchResults(in) {
+		titles = append(titles, r.Title)
+	}
+	require.Equal(t, []string{"first", "second", "url", "bare one", "bare two"}, titles)
+}
+
+func TestGatherDedupesRetryResults(t *testing.T) {
+	same := jackett.SearchResult{IndexerID: 1, GUID: "g1", Title: "junk"}
+	g := searchGatherer{
+		search: func(_ context.Context, req *jackett.TorznabSearchRequest) (*jackett.SearchResponse, error) {
+			return &jackett.SearchResponse{Results: []jackett.SearchResult{same}, CoveredIndexerIDs: []int{1}}, nil
+		},
+		usable: func(r jackett.SearchResult) bool { return r.Title == "match" },
+	}
+	req := jackett.TorznabSearchRequest{Query: "Movie", Year: 2020, IndexerIDs: []int{1}}
+	resp, _, _, err := g.gather(t.Context(), t.Context(), gatherInput{req: &req})
+	require.NoError(t, err)
+	require.Len(t, resp.Results, 1)
+}

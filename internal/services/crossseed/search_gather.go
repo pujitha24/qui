@@ -33,7 +33,7 @@ type gatherInput struct {
 	torrentName    string
 }
 
-// gather returns the response with every pass's results merged, the covered
+// gather returns the response with every pass's results merged and deduplicated, the covered
 // indexer IDs, whether any indexer answered any pass, and the primary-pass or
 // context error. Passes search on waitCtx.
 // Only ctx cancellation aborts a retry. A failed yearless retry marks the
@@ -191,8 +191,31 @@ func (g searchGatherer) gather(ctx, waitCtx context.Context, in gatherInput) (*j
 		}
 	}
 
-	resp.Results = results
+	resp.Results = dedupeSearchResults(results)
 	return resp, covered, answered, nil
+}
+
+// dedupeSearchResults keeps the first occurrence of each result, keyed by GUID
+// and then download URL like deduplicateScoredTorrentSearchResults. An indexer
+// that ignores a retry's changed parameter returns the same items again.
+// Results with neither key stay separate.
+func dedupeSearchResults(results []jackett.SearchResult) []jackett.SearchResult {
+	seen := make(map[string]struct{}, len(results))
+	deduplicated := make([]jackett.SearchResult, 0, len(results))
+	for _, r := range results {
+		key := r.GUID
+		if key == "" {
+			key = r.DownloadURL
+		}
+		if key != "" {
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		deduplicated = append(deduplicated, r)
+	}
+	return deduplicated
 }
 
 // indexersWithoutResults returns the requested indexer IDs that produced no
